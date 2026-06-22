@@ -1,0 +1,916 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hamilton Channel Alignment Analyzer</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500&display=swap');
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:        #0d0f12;
+    --surface:   #141720;
+    --border:    #252a35;
+    --muted:     #3a404f;
+    --text:      #c8cdd8;
+    --label:     #7a8299;
+    --accent:    #e8f04a;   /* instrument yellow */
+    --green:     #3ef07a;
+    --orange:    #f07a3e;
+    --red:       #f03e3e;
+    --cyan:      #3ee8f0;
+    --mono:      'IBM Plex Mono', monospace;
+    --sans:      'IBM Plex Sans', sans-serif;
+  }
+
+  html, body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 15px;
+    min-height: 100vh;
+    line-height: 1.5;
+  }
+
+  /* ── Layout ── */
+  .shell {
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 0 20px 60px;
+  }
+
+  /* ── Header ── */
+  header {
+    padding: 36px 0 28px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 32px;
+  }
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.18em;
+    color: var(--accent);
+    text-transform: uppercase;
+    margin-bottom: 10px;
+  }
+  h1 {
+    font-family: var(--mono);
+    font-size: clamp(20px, 4vw, 28px);
+    font-weight: 600;
+    color: #fff;
+    letter-spacing: -0.02em;
+  }
+  .subtitle {
+    margin-top: 8px;
+    color: var(--label);
+    font-size: 14px;
+    font-weight: 300;
+  }
+
+  /* ── Drop zone ── */
+  #drop-zone {
+    border: 1px dashed var(--muted);
+    border-radius: 6px;
+    padding: 48px 24px;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s;
+    position: relative;
+    background: var(--surface);
+  }
+  #drop-zone:hover, #drop-zone.drag-over {
+    border-color: var(--accent);
+    background: #1a1d25;
+  }
+  #drop-zone input[type="file"] {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    cursor: pointer;
+    width: 100%;
+    height: 100%;
+  }
+  .drop-icon {
+    font-size: 36px;
+    margin-bottom: 14px;
+    opacity: 0.6;
+  }
+  .drop-primary {
+    font-family: var(--mono);
+    font-size: 14px;
+    color: var(--text);
+    margin-bottom: 6px;
+  }
+  .drop-secondary {
+    font-size: 13px;
+    color: var(--label);
+  }
+  .drop-secondary kbd {
+    background: var(--border);
+    border-radius: 3px;
+    padding: 1px 5px;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text);
+  }
+
+  /* camera button */
+  .camera-btn {
+    margin-top: 16px;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--label);
+    font-family: var(--mono);
+    font-size: 12px;
+    padding: 8px 16px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: border-color 0.15s, color 0.15s;
+    letter-spacing: 0.05em;
+  }
+  .camera-btn:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+
+  /* ── Status bar ── */
+  #status-bar {
+    display: none;
+    margin-top: 16px;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--label);
+    letter-spacing: 0.04em;
+  }
+  #status-bar.visible { display: flex; align-items: center; gap: 10px; }
+  .spinner {
+    width: 14px; height: 14px;
+    border: 2px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+    flex-shrink: 0;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ── Sensitivity control ── */
+  .controls {
+    display: none;
+    margin-top: 20px;
+    padding: 16px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    gap: 20px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  .controls.visible { display: flex; }
+  .control-group {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .control-group label {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--label);
+    letter-spacing: 0.08em;
+    white-space: nowrap;
+  }
+  input[type="range"] {
+    -webkit-appearance: none;
+    width: 120px;
+    height: 3px;
+    background: var(--border);
+    border-radius: 2px;
+    outline: none;
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 14px; height: 14px;
+    background: var(--accent);
+    border-radius: 50%;
+    cursor: pointer;
+  }
+  #thresh-val {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--accent);
+    min-width: 30px;
+  }
+  .rerun-btn {
+    background: transparent;
+    border: 1px solid var(--accent);
+    color: var(--accent);
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    padding: 6px 14px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  .rerun-btn:hover { background: rgba(232,240,74,0.08); }
+
+  /* ── Result ── */
+  #result-section { display: none; margin-top: 32px; }
+  #result-section.visible { display: block; }
+
+  .result-header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+  .result-title {
+    font-family: var(--mono);
+    font-size: 13px;
+    color: var(--label);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+  .download-btn {
+    background: var(--accent);
+    color: #0d0f12;
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    padding: 7px 18px;
+    border-radius: 4px;
+    border: none;
+    cursor: pointer;
+    text-decoration: none;
+    display: inline-block;
+    transition: opacity 0.15s;
+  }
+  .download-btn:hover { opacity: 0.85; }
+
+  #canvas-out {
+    width: 100%;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    display: block;
+  }
+
+  /* ── Data table ── */
+  .data-section {
+    margin-top: 24px;
+  }
+  .data-meta {
+    display: flex;
+    gap: 28px;
+    flex-wrap: wrap;
+    margin-bottom: 16px;
+    padding: 14px 16px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+  }
+  .meta-item {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+  .meta-label {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--label);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+  .meta-value {
+    font-family: var(--mono);
+    font-size: 18px;
+    font-weight: 600;
+    color: #fff;
+  }
+  .meta-value.ok { color: var(--green); }
+  .meta-value.warn { color: var(--orange); }
+  .meta-value.bad { color: var(--red); }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: var(--mono);
+    font-size: 13px;
+  }
+  thead tr {
+    border-bottom: 1px solid var(--border);
+  }
+  th {
+    text-align: left;
+    padding: 8px 12px;
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--label);
+  }
+  td {
+    padding: 9px 12px;
+    border-bottom: 1px solid #1a1d25;
+    color: var(--text);
+  }
+  tr:last-child td { border-bottom: none; }
+  tbody tr:hover td { background: var(--surface); }
+
+  .dev-bar-wrap {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .dev-bar-track {
+    width: 80px;
+    height: 4px;
+    background: var(--border);
+    border-radius: 2px;
+    position: relative;
+    flex-shrink: 0;
+  }
+  .dev-bar-fill {
+    position: absolute;
+    top: 0;
+    height: 4px;
+    border-radius: 2px;
+  }
+  .dev-val { min-width: 52px; }
+  .dev-val.ok    { color: var(--green); }
+  .dev-val.warn  { color: var(--orange); }
+  .dev-val.bad   { color: var(--red); }
+
+  .badge {
+    display: inline-block;
+    font-size: 9px;
+    letter-spacing: 0.1em;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-weight: 600;
+  }
+  .badge.ok   { background: rgba(62,240,122,0.12); color: var(--green); }
+  .badge.warn { background: rgba(240,122,62,0.12); color: var(--orange); }
+  .badge.bad  { background: rgba(240,62,62,0.12);  color: var(--red); }
+
+  /* ── Error message ── */
+  #error-msg {
+    display: none;
+    margin-top: 16px;
+    padding: 12px 16px;
+    background: rgba(240,62,62,0.08);
+    border: 1px solid rgba(240,62,62,0.3);
+    border-radius: 6px;
+    font-family: var(--mono);
+    font-size: 13px;
+    color: var(--red);
+  }
+  #error-msg.visible { display: block; }
+
+  /* ── OpenCV loading ── */
+  #opencv-status {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--label);
+    text-align: center;
+    padding: 8px 0;
+    letter-spacing: 0.06em;
+  }
+
+  /* camera input hidden */
+  #camera-input { display: none; }
+
+  footer {
+    margin-top: 48px;
+    padding-top: 20px;
+    border-top: 1px solid var(--border);
+    font-size: 12px;
+    color: var(--muted);
+    font-family: var(--mono);
+  }
+</style>
+</head>
+<body>
+<div class="shell">
+
+  <header>
+    <div class="eyebrow">Instrument Diagnostics</div>
+    <h1>Channel Alignment Analyzer</h1>
+    <p class="subtitle">Hamilton STAR / STARlet · Stop disk alignment via photo analysis · runs entirely in browser</p>
+  </header>
+
+  <div id="opencv-status">Loading OpenCV.js — one moment…</div>
+
+  <div id="drop-zone">
+    <input type="file" id="file-input" accept="image/*">
+    <div class="drop-icon">⬡</div>
+    <div class="drop-primary">Drop a photo here, or click to browse</div>
+    <div class="drop-secondary">JPG, PNG, HEIC · any resolution</div>
+  </div>
+  <div style="text-align:center">
+    <button class="camera-btn" id="camera-btn">
+      <span>◉</span> Take a photo with camera
+    </button>
+    <input type="file" id="camera-input" accept="image/*" capture="environment">
+  </div>
+
+  <div id="status-bar">
+    <div class="spinner"></div>
+    <span id="status-text">Analyzing…</span>
+  </div>
+
+  <div class="controls" id="controls">
+    <div class="control-group">
+      <label>DETECTION THRESHOLD</label>
+      <input type="range" id="thresh-slider" min="40" max="90" value="70" step="1">
+      <span id="thresh-val">0.70</span>
+    </div>
+    <button class="rerun-btn" id="rerun-btn">RE-RUN</button>
+  </div>
+
+  <div id="error-msg"></div>
+
+  <div id="result-section">
+    <div class="result-header">
+      <span class="result-title">Result</span>
+      <a id="download-link" class="download-btn" download="alignment_analysis.jpg">↓ Download annotated image</a>
+    </div>
+    <canvas id="canvas-out"></canvas>
+    <div class="data-section">
+      <div class="data-meta" id="data-meta"></div>
+      <table id="data-table">
+        <thead>
+          <tr>
+            <th>Channel</th>
+            <th>Deviation</th>
+            <th></th>
+            <th>Status</th>
+            <th>Score</th>
+          </tr>
+        </thead>
+        <tbody id="table-body"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <footer>All processing runs locally in your browser. No image data is uploaded anywhere.</footer>
+
+</div>
+
+<!-- Hidden canvas for processing -->
+<canvas id="canvas-proc" style="display:none"></canvas>
+
+<script>
+// ── OpenCV.js ──────────────────────────────────────────────────────────────
+var opencvReady = false;
+var Module = {
+  onRuntimeInitialized: function() {
+    opencvReady = true;
+    document.getElementById('opencv-status').textContent = '';
+    document.getElementById('opencv-status').style.display = 'none';
+    document.getElementById('drop-zone').style.opacity = '1';
+    document.getElementById('camera-btn').style.opacity = '1';
+  }
+};
+</script>
+<script async src="https://docs.opencv.org/4.8.0/opencv.js" onload="console.log('OpenCV.js loaded')"></script>
+<script>
+// ── State ─────────────────────────────────────────────────────────────────
+var currentImageData = null;  // ImageData from the loaded image
+var currentImg = null;        // HTMLImageElement
+
+// ── UI refs ───────────────────────────────────────────────────────────────
+var dropZone    = document.getElementById('drop-zone');
+var fileInput   = document.getElementById('file-input');
+var cameraBtn   = document.getElementById('camera-btn');
+var cameraInput = document.getElementById('camera-input');
+var statusBar   = document.getElementById('status-bar');
+var statusText  = document.getElementById('status-text');
+var controls    = document.getElementById('controls');
+var threshSlider= document.getElementById('thresh-slider');
+var threshVal   = document.getElementById('thresh-val');
+var rerunBtn    = document.getElementById('rerun-btn');
+var errorMsg    = document.getElementById('error-msg');
+var resultSec   = document.getElementById('result-section');
+var canvasOut   = document.getElementById('canvas-out');
+var canvasProc  = document.getElementById('canvas-proc');
+var dlLink      = document.getElementById('download-link');
+var dataMeta    = document.getElementById('data-meta');
+var tableBody   = document.getElementById('table-body');
+
+// Initially dim controls until OpenCV ready
+dropZone.style.opacity = '0.4';
+cameraBtn.style.opacity = '0.4';
+
+// ── File handling ──────────────────────────────────────────────────────────
+dropZone.addEventListener('dragover', function(e) {
+  e.preventDefault();
+  dropZone.classList.add('drag-over');
+});
+dropZone.addEventListener('dragleave', function() {
+  dropZone.classList.remove('drag-over');
+});
+dropZone.addEventListener('drop', function(e) {
+  e.preventDefault();
+  dropZone.classList.remove('drag-over');
+  var file = e.dataTransfer.files[0];
+  if (file) loadFile(file);
+});
+fileInput.addEventListener('change', function() {
+  if (fileInput.files[0]) loadFile(fileInput.files[0]);
+});
+cameraBtn.addEventListener('click', function() {
+  cameraInput.click();
+});
+cameraInput.addEventListener('change', function() {
+  if (cameraInput.files[0]) loadFile(cameraInput.files[0]);
+});
+
+threshSlider.addEventListener('input', function() {
+  threshVal.textContent = (threshSlider.value / 100).toFixed(2);
+});
+rerunBtn.addEventListener('click', function() {
+  if (currentImg) runAnalysis(currentImg);
+});
+
+function loadFile(file) {
+  if (!opencvReady) {
+    showError('OpenCV is still loading. Please wait a moment and try again.');
+    return;
+  }
+  clearResults();
+  var url = URL.createObjectURL(file);
+  var img = new Image();
+  img.onload = function() {
+    currentImg = img;
+    URL.revokeObjectURL(url);
+    runAnalysis(img);
+  };
+  img.onerror = function() { showError('Could not load image. Try a JPG or PNG file.'); };
+  img.src = url;
+}
+
+// ── Analysis ───────────────────────────────────────────────────────────────
+function runAnalysis(img) {
+  setStatus('Loading image…');
+
+  // Draw image to proc canvas
+  canvasProc.width  = img.naturalWidth;
+  canvasProc.height = img.naturalHeight;
+  var ctx = canvasProc.getContext('2d');
+  ctx.drawImage(img, 0, 0);
+
+  setTimeout(function() {
+    try {
+      analyze(img, ctx);
+    } catch(e) {
+      showError('Analysis failed: ' + e.message);
+      console.error(e);
+    }
+  }, 30);
+}
+
+function analyze(img, ctx) {
+  setStatus('Running template matching…');
+  var W = img.naturalWidth;
+  var H = img.naturalHeight;
+
+  // Read image into OpenCV
+  var src = cv.imread(canvasProc);
+  var gray = new cv.Mat();
+  cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
+
+  // Build template: dark circle (hole) on bright background
+  var HOLE_R = Math.round(Math.max(W, H) * 0.0053); // ~18px at 3392 wide
+  HOLE_R = Math.max(10, Math.min(30, HOLE_R));
+  var TSIZE = HOLE_R * 4 + 4;
+  var TC = Math.floor(TSIZE / 2);
+
+  var tData = new Uint8Array(TSIZE * TSIZE);
+  for (var ty = 0; ty < TSIZE; ty++) {
+    for (var tx = 0; tx < TSIZE; tx++) {
+      var dist2 = (tx - TC) * (tx - TC) + (ty - TC) * (ty - TC);
+      tData[ty * TSIZE + tx] = dist2 < HOLE_R * HOLE_R ? 15 : 180;
+    }
+  }
+  var tmpl = new cv.Mat(TSIZE, TSIZE, cv.CV_8UC1);
+  tmpl.data.set(tData);
+
+  // Template match
+  var result = new cv.Mat();
+  cv.matchTemplate(gray, tmpl, result, cv.TM_CCOEFF_NORMED);
+
+  // Collect all matches above threshold
+  var thresh = threshSlider.value / 100;
+  var matches = [];
+  var rData = result.data32F;
+  var rW = result.cols;
+  var rH = result.rows;
+
+  for (var ry = 0; ry < rH; ry++) {
+    for (var rx = 0; rx < rW; rx++) {
+      var score = rData[ry * rW + rx];
+      if (score > thresh) {
+        matches.push({ x: rx + TC, y: ry + TC, score: score });
+      }
+    }
+  }
+
+  // Non-max suppression
+  matches.sort(function(a, b) { return b.score - a.score; });
+  var kept = [];
+  var EXCL = Math.round(Math.max(W, H) * 0.03); // ~100px at 3392
+  for (var i = 0; i < matches.length; i++) {
+    var m = matches[i];
+    var ok = true;
+    for (var j = 0; j < kept.length; j++) {
+      if (Math.abs(m.x - kept[j].x) < EXCL && Math.abs(m.y - kept[j].y) < EXCL) {
+        ok = false; break;
+      }
+    }
+    if (ok) kept.push(m);
+  }
+
+  // Cleanup OpenCV mats
+  src.delete(); gray.delete(); tmpl.delete(); result.delete();
+
+  if (kept.length < 2) {
+    showError(
+      'Only ' + kept.length + ' disk hole(s) detected at threshold ' + thresh.toFixed(2) + '. ' +
+      'Try lowering the detection threshold and re-running.'
+    );
+    controls.classList.add('visible');
+    return;
+  }
+
+  // Determine orientation: are disks spread horizontally or vertically?
+  // Compare x-spread vs y-spread
+  var allX = kept.map(function(m) { return m.x; });
+  var allY = kept.map(function(m) { return m.y; });
+  var xRange = Math.max.apply(null, allX) - Math.min.apply(null, allX);
+  var yRange = Math.max.apply(null, allY) - Math.min.apply(null, allY);
+  var horizontal = xRange > yRange;
+
+  // Sort along primary axis
+  kept.sort(function(a, b) { return horizontal ? a.x - b.x : a.y - b.y; });
+
+  // Best-fit line
+  // If horizontal: fit y = a*x + b (primary axis = x)
+  // If vertical:   fit x = a*y + b (primary axis = y)
+  var n = kept.length;
+  var sumP = 0, sumQ = 0, sumPP = 0, sumPQ = 0;
+  for (var i = 0; i < n; i++) {
+    var p = horizontal ? kept[i].x : kept[i].y;
+    var q = horizontal ? kept[i].y : kept[i].x;
+    sumP += p; sumQ += q;
+    sumPP += p * p; sumPQ += p * q;
+  }
+  var denom = n * sumPP - sumP * sumP;
+  var fitA = denom !== 0 ? (n * sumPQ - sumP * sumQ) / denom : 0;
+  var fitB = (sumQ - fitA * sumP) / n;
+
+  // Compute deviations (perpendicular to primary axis)
+  var devs = kept.map(function(m) {
+    var p = horizontal ? m.x : m.y;
+    var q = horizontal ? m.y : m.x;
+    return q - (fitA * p + fitB);
+  });
+
+  setStatus('Rendering…');
+  setTimeout(function() {
+    renderResult(img, kept, devs, fitA, fitB, horizontal, thresh);
+  }, 20);
+}
+
+// ── Rendering ──────────────────────────────────────────────────────────────
+function renderResult(img, kept, devs, fitA, fitB, horizontal, thresh) {
+  var W = img.naturalWidth;
+  var H = img.naturalHeight;
+
+  // Draw onto output canvas at full res then display scaled
+  canvasOut.width  = W;
+  canvasOut.height = H;
+  var ctx = canvasOut.getContext('2d');
+  ctx.drawImage(img, 0, 0);
+
+  var scale = W / 800; // base stroke scale
+  var R = Math.round(Math.max(W, H) * 0.016); // circle radius
+  var LW = Math.round(scale * 2.5);
+  var fontSize = Math.round(scale * 14);
+  var fontSize2 = Math.round(scale * 12);
+
+  // Best-fit line
+  ctx.strokeStyle = '#ff2828';
+  ctx.lineWidth = LW * 2;
+  ctx.beginPath();
+  if (horizontal) {
+    ctx.moveTo(0, fitB);
+    ctx.lineTo(W, fitA * W + fitB);
+  } else {
+    ctx.moveTo(fitB, 0);
+    ctx.lineTo(fitA * H + fitB, H);
+  }
+  ctx.stroke();
+
+  var maxAbs = Math.max.apply(null, devs.map(Math.abs));
+
+  for (var i = 0; i < kept.length; i++) {
+    var m = kept[i];
+    var dev = devs[i];
+    var absdev = Math.abs(dev);
+
+    var color;
+    if (absdev > 15 * (W / 3392)) {
+      color = '#f03e3e';
+    } else if (absdev > 7 * (W / 3392)) {
+      color = '#f07a3e';
+    } else {
+      color = '#3ef07a';
+    }
+
+    // Deviation tick line
+    ctx.strokeStyle = '#00d4e8';
+    ctx.lineWidth = LW;
+    ctx.beginPath();
+    if (horizontal) {
+      var yFit = fitA * m.x + fitB;
+      ctx.moveTo(m.x, m.y);
+      ctx.lineTo(m.x, yFit);
+    } else {
+      var xFit = fitA * m.y + fitB;
+      ctx.moveTo(m.x, m.y);
+      ctx.lineTo(xFit, m.y);
+    }
+    ctx.stroke();
+
+    // Circle
+    ctx.strokeStyle = color;
+    ctx.lineWidth = LW * 2.5;
+    ctx.beginPath();
+    ctx.arc(m.x, m.y, R, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // Labels
+    var label1 = 'Ch' + (i + 1);
+    var label2 = (dev >= 0 ? '+' : '') + dev.toFixed(1) + 'px';
+
+    var lx, ly;
+    if (horizontal) {
+      lx = m.x - R * 0.8;
+      ly = m.y - R - fontSize * 2.4;
+    } else {
+      lx = m.x + R * 1.4;
+      ly = m.y - fontSize * 0.6;
+    }
+
+    ctx.font = 'bold ' + fontSize + 'px "IBM Plex Mono", monospace';
+    // Shadow
+    ctx.fillStyle = 'rgba(0,0,0,0.8)';
+    for (var dx = -3; dx <= 3; dx += 3) {
+      for (var dy = -3; dy <= 3; dy += 3) {
+        if (dx !== 0 || dy !== 0) {
+          ctx.fillText(label1, lx + dx, ly + dy);
+        }
+      }
+    }
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(label1, lx, ly);
+
+    ctx.font = 'bold ' + fontSize2 + 'px "IBM Plex Mono", monospace';
+    var ly2 = ly + fontSize * 1.3;
+    ctx.fillStyle = 'rgba(0,0,0,0.8)';
+    for (var dx = -3; dx <= 3; dx += 3) {
+      for (var dy = -3; dy <= 3; dy += 3) {
+        if (dx !== 0 || dy !== 0) {
+          ctx.fillText(label2, lx + dx, ly2 + dy);
+        }
+      }
+    }
+    ctx.fillStyle = color;
+    ctx.fillText(label2, lx, ly2);
+  }
+
+  // Set download link
+  canvasOut.toBlob(function(blob) {
+    var url = URL.createObjectURL(blob);
+    dlLink.href = url;
+  }, 'image/jpeg', 0.93);
+
+  // Populate data table
+  populateTable(kept, devs, maxAbs, thresh, W);
+
+  // Show result
+  hideStatus();
+  resultSec.classList.add('visible');
+  controls.classList.add('visible');
+  errorMsg.classList.remove('visible');
+
+  resultSec.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function populateTable(kept, devs, maxAbs, thresh, W) {
+  // Scale factor: normalize to equivalent 3392px wide image
+  var scalePx = W / 3392;
+  var WARN_PX = 7 * scalePx;
+  var BAD_PX  = 15 * scalePx;
+
+  // Meta stats
+  var maxDev = Math.max.apply(null, devs.map(Math.abs));
+  var rms = Math.sqrt(devs.reduce(function(s, d) { return s + d*d; }, 0) / devs.length);
+  var worstIdx = devs.map(Math.abs).indexOf(Math.max.apply(null, devs.map(Math.abs)));
+
+  var maxClass = maxDev > BAD_PX ? 'bad' : maxDev > WARN_PX ? 'warn' : 'ok';
+  var rmsClass  = rms > BAD_PX * 0.6 ? 'bad' : rms > WARN_PX * 0.6 ? 'warn' : 'ok';
+
+  dataMeta.innerHTML =
+    '<div class="meta-item">' +
+      '<span class="meta-label">Channels detected</span>' +
+      '<span class="meta-value">' + kept.length + '</span>' +
+    '</div>' +
+    '<div class="meta-item">' +
+      '<span class="meta-label">Max deviation</span>' +
+      '<span class="meta-value ' + maxClass + '">' + (devs[worstIdx] >= 0 ? '+' : '') + devs[worstIdx].toFixed(1) + ' px</span>' +
+    '</div>' +
+    '<div class="meta-item">' +
+      '<span class="meta-label">RMS deviation</span>' +
+      '<span class="meta-value ' + rmsClass + '">' + rms.toFixed(1) + ' px</span>' +
+    '</div>' +
+    '<div class="meta-item">' +
+      '<span class="meta-label">Worst channel</span>' +
+      '<span class="meta-value ' + maxClass + '">Ch' + (worstIdx + 1) + '</span>' +
+    '</div>';
+
+  // Table rows
+  tableBody.innerHTML = '';
+  for (var i = 0; i < kept.length; i++) {
+    var dev = devs[i];
+    var absdev = Math.abs(dev);
+    var cls = absdev > BAD_PX ? 'bad' : absdev > WARN_PX ? 'warn' : 'ok';
+    var badge = cls === 'ok' ? 'OK' : cls === 'warn' ? 'CHECK' : 'ADJUST';
+
+    // Bar: center is midpoint, fill extends left or right
+    var barPct = Math.min(100, (absdev / (maxAbs * 1.1)) * 50);
+    var barColor = cls === 'ok' ? '#3ef07a' : cls === 'warn' ? '#f07a3e' : '#f03e3e';
+    var barLeft  = dev < 0 ? (50 - barPct) + '%' : '50%';
+    var barWidth = barPct + '%';
+
+    var tr = document.createElement('tr');
+    tr.innerHTML =
+      '<td>Ch' + (i + 1) + '</td>' +
+      '<td>' +
+        '<div class="dev-bar-wrap">' +
+          '<div class="dev-bar-track">' +
+            '<div class="dev-bar-fill" style="left:' + barLeft + ';width:' + barWidth + ';background:' + barColor + '"></div>' +
+          '</div>' +
+          '<span class="dev-val ' + cls + '">' + (dev >= 0 ? '+' : '') + dev.toFixed(1) + ' px</span>' +
+        '</div>' +
+      '</td>' +
+      '<td></td>' +
+      '<td><span class="badge ' + cls + '">' + badge + '</span></td>' +
+      '<td style="color:var(--label)">' + (kept[i].score * 100).toFixed(0) + '%</td>';
+    tableBody.appendChild(tr);
+  }
+}
+
+// ── Helpers ────────────────────────────────────────────────────────────────
+function setStatus(msg) {
+  statusText.textContent = msg;
+  statusBar.classList.add('visible');
+}
+function hideStatus() {
+  statusBar.classList.remove('visible');
+}
+function clearResults() {
+  resultSec.classList.remove('visible');
+  controls.classList.remove('visible');
+  errorMsg.classList.remove('visible');
+  tableBody.innerHTML = '';
+  dataMeta.innerHTML = '';
+}
+function showError(msg) {
+  hideStatus();
+  errorMsg.textContent = msg;
+  errorMsg.classList.add('visible');
+}
+
+// Poll for OpenCV ready as fallback (some browsers fire onload late)
+var opencvPollTimer = setInterval(function() {
+  if (typeof cv !== 'undefined' && cv.Mat) {
+    if (!opencvReady) {
+      opencvReady = true;
+      document.getElementById('opencv-status').style.display = 'none';
+      dropZone.style.opacity = '1';
+      cameraBtn.style.opacity = '1';
+    }
+    clearInterval(opencvPollTimer);
+  }
+}, 300);
+</script>
+</body>
+</html>
